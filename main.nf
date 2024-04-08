@@ -1425,7 +1425,7 @@ input:
  val mate from g_3_mate_g26_20
 
 output:
- set val(name), file("*_atleast-*.fastq")  into g26_20_reads0_g28_15, g26_20_reads0_g65_12
+ set val(name), file("*_atleast-*.fastq")  into g26_20_reads0_g_70, g26_20_reads0_g28_15, g26_20_reads0_g65_12
  set val(name), file("out*")  into g26_20_logFile1_g55_0
 
 script:
@@ -1453,6 +1453,198 @@ if(num!=0){
 SplitSeq.py group -s ${readArray} -f ${field} ${num} >> out_${R1}_SS.log
 """
 
+}
+
+
+process Parse_header_table_parse_headers {
+
+publishDir params.outdir, mode: 'copy', saveAs: {filename -> if (filename =~ /.*${out}$/) "parse_header_table/$filename"}
+input:
+ set val(name), file(reads) from g26_20_reads0_g28_15
+ val mate from g_3_mate_g28_15
+
+output:
+ set val(name),file("*${out}")  into g28_15_reads00
+ set val(name),file("out*")  into g28_15_logFile1_g55_0
+
+script:
+method = params.Parse_header_table_parse_headers.method
+act = params.Parse_header_table_parse_headers.act
+args = params.Parse_header_table_parse_headers.args
+
+"""
+echo ${name}
+"""
+
+readArray = reads.toString().split(' ')	
+if(mate=="pair"){
+	R1 = readArray.grep(~/.*R1.*/)[0]
+	R2 = readArray.grep(~/.*R2.*/)[0]
+}else{
+	R1 = readArray[0]
+}
+
+
+if(method=="collapse" || method=="add" || method=="copy" || method=="rename" || method=="merge"){
+	out="_reheader.fastq"
+	"""
+	ParseHeaders.py  ${method} -s ${reads} ${args} --act ${act} >> out_${R1}_PH.log
+	"""
+}else{
+	if(method=="table"){
+			out=".tab"
+			"""
+			ParseHeaders.py ${method} -s ${reads} ${args} >> out_${R1}_PH.log
+			"""	
+	}else{
+		out="_reheader.fastq"
+		"""
+		ParseHeaders.py ${method} -s ${reads} ${args} >> out_${R1}_PH.log
+		"""		
+	}
+}
+
+
+}
+
+
+process vdjbase_input {
+
+publishDir params.outdir, mode: 'copy', saveAs: {filename -> if (filename =~ /${chain}$/) "reads/$filename"}
+input:
+ set val(name),file(reads) from g26_20_reads0_g_70
+
+output:
+ file "${chain}"  into g_70_germlineDb00
+
+script:
+chain = params.vdjbase_input.chain
+
+"""
+mkdir ${chain}
+mv ${reads} ${chain}/${name}.fasta
+"""
+
+}
+
+
+process make_report_pipeline_cat_all_file {
+
+input:
+ set val(name), file(log_file) from g11_9_logFile1_g55_0
+ set val(name), file(log_file) from g54_10_logFile2_g55_0
+ set val(name), file(log_file) from g16_9_logFile1_g55_0
+ set val(name), file(log_file) from g21_15_logFile1_g55_0
+ set val(name), file(log_file) from g22_16_logFile4_g55_0
+ set val(name), file(log_file) from g26_20_logFile1_g55_0
+ set val(name), file(log_file) from g28_15_logFile1_g55_0
+
+output:
+ set val(name), file("all_out_file.log")  into g55_0_logFile0_g55_2
+
+script:
+readArray = log_file.toString()
+
+"""
+
+echo $readArray
+cat out* >> all_out_file.log
+"""
+
+}
+
+
+process make_report_pipeline_report_pipeline {
+
+input:
+ set val(name), file(log_files) from g55_0_logFile0_g55_2
+
+output:
+ file "*.rmd"  into g55_2_rMarkdown0_g55_1
+
+
+shell:
+
+readArray = log_files.toString().split(' ')
+R1 = readArray[0]
+
+'''
+#!/usr/bin/env perl
+
+
+my $script = <<'EOF';
+
+
+```{r, message=FALSE, echo=FALSE, results="hide"}
+# Setup
+library(prestor)
+library(knitr)
+library(captioner)
+
+plot_titles <- c("Read 1", "Read 2")
+if (!exists("tables")) { tables <- captioner(prefix="Table") }
+if (!exists("figures")) { figures <- captioner(prefix="Figure") }
+tables("count", 
+       "The count of reads that passed and failed each processing step.")
+figures("steps", 
+        paste("The number of reads or read sets retained at each processing step. 
+               Shown as raw counts (top) and percentages of input from the previous 
+               step (bottom). Steps having more than one column display individual values for", 
+              plot_titles[1], "(first column) and", plot_titles[2], "(second column)."))
+```
+
+```{r, echo=FALSE}
+console_log <- loadConsoleLog(file.path(".","!{R1}"))
+```
+
+# Summary of Processing Steps
+
+```{r, echo=FALSE}
+count_df <- plotConsoleLog(console_log, sizing="figure")
+
+df<-count_df[,c("task", "pass", "fail")]
+
+write.csv(df,"pipeline_statistics.csv") 
+```
+
+`r figures("steps")`
+
+```{r, echo=FALSE}
+kable(count_df[c("step", "task", "total", "pass", "fail")],
+      col.names=c("Step", "Task", "Input", "Passed", "Failed"),
+      digits=3)
+```
+
+`r tables("count")`
+
+
+EOF
+	
+open OUT, ">pipeline_statistic_!{name}.rmd";
+print OUT $script;
+close OUT;
+
+'''
+}
+
+
+process make_report_pipeline_render_rmarkdown {
+
+publishDir params.outdir, mode: 'copy', saveAs: {filename -> if (filename =~ /.*.html$/) "report_pipeline/$filename"}
+input:
+ file rmk from g55_2_rMarkdown0_g55_1
+
+output:
+ file "*.html"  into g55_1_outputFileHTML00
+ file "*csv" optional true  into g55_1_csvFile11
+
+"""
+
+#!/usr/bin/env Rscript 
+
+rmarkdown::render("${rmk}", clean=TRUE, output_format="html_document", output_dir=".")
+
+"""
 }
 
 
@@ -1615,178 +1807,6 @@ input:
 output:
  file "*.html"  into g65_7_outputFileHTML00
  file "*csv" optional true  into g65_7_csvFile11
-
-"""
-
-#!/usr/bin/env Rscript 
-
-rmarkdown::render("${rmk}", clean=TRUE, output_format="html_document", output_dir=".")
-
-"""
-}
-
-
-process Parse_header_table_parse_headers {
-
-publishDir params.outdir, mode: 'copy', saveAs: {filename -> if (filename =~ /.*${out}$/) "parse_header_table/$filename"}
-input:
- set val(name), file(reads) from g26_20_reads0_g28_15
- val mate from g_3_mate_g28_15
-
-output:
- set val(name),file("*${out}")  into g28_15_reads00
- set val(name),file("out*")  into g28_15_logFile1_g55_0
-
-script:
-method = params.Parse_header_table_parse_headers.method
-act = params.Parse_header_table_parse_headers.act
-args = params.Parse_header_table_parse_headers.args
-
-"""
-echo ${name}
-"""
-
-readArray = reads.toString().split(' ')	
-if(mate=="pair"){
-	R1 = readArray.grep(~/.*R1.*/)[0]
-	R2 = readArray.grep(~/.*R2.*/)[0]
-}else{
-	R1 = readArray[0]
-}
-
-
-if(method=="collapse" || method=="add" || method=="copy" || method=="rename" || method=="merge"){
-	out="_reheader.fastq"
-	"""
-	ParseHeaders.py  ${method} -s ${reads} ${args} --act ${act} >> out_${R1}_PH.log
-	"""
-}else{
-	if(method=="table"){
-			out=".tab"
-			"""
-			ParseHeaders.py ${method} -s ${reads} ${args} >> out_${R1}_PH.log
-			"""	
-	}else{
-		out="_reheader.fastq"
-		"""
-		ParseHeaders.py ${method} -s ${reads} ${args} >> out_${R1}_PH.log
-		"""		
-	}
-}
-
-
-}
-
-
-process make_report_pipeline_cat_all_file {
-
-input:
- set val(name), file(log_file) from g11_9_logFile1_g55_0
- set val(name), file(log_file) from g54_10_logFile2_g55_0
- set val(name), file(log_file) from g16_9_logFile1_g55_0
- set val(name), file(log_file) from g21_15_logFile1_g55_0
- set val(name), file(log_file) from g22_16_logFile4_g55_0
- set val(name), file(log_file) from g26_20_logFile1_g55_0
- set val(name), file(log_file) from g28_15_logFile1_g55_0
-
-output:
- set val(name), file("all_out_file.log")  into g55_0_logFile0_g55_2
-
-script:
-readArray = log_file.toString()
-
-"""
-
-echo $readArray
-cat out* >> all_out_file.log
-"""
-
-}
-
-
-process make_report_pipeline_report_pipeline {
-
-input:
- set val(name), file(log_files) from g55_0_logFile0_g55_2
-
-output:
- file "*.rmd"  into g55_2_rMarkdown0_g55_1
-
-
-shell:
-
-readArray = log_files.toString().split(' ')
-R1 = readArray[0]
-
-'''
-#!/usr/bin/env perl
-
-
-my $script = <<'EOF';
-
-
-```{r, message=FALSE, echo=FALSE, results="hide"}
-# Setup
-library(prestor)
-library(knitr)
-library(captioner)
-
-plot_titles <- c("Read 1", "Read 2")
-if (!exists("tables")) { tables <- captioner(prefix="Table") }
-if (!exists("figures")) { figures <- captioner(prefix="Figure") }
-tables("count", 
-       "The count of reads that passed and failed each processing step.")
-figures("steps", 
-        paste("The number of reads or read sets retained at each processing step. 
-               Shown as raw counts (top) and percentages of input from the previous 
-               step (bottom). Steps having more than one column display individual values for", 
-              plot_titles[1], "(first column) and", plot_titles[2], "(second column)."))
-```
-
-```{r, echo=FALSE}
-console_log <- loadConsoleLog(file.path(".","!{R1}"))
-```
-
-# Summary of Processing Steps
-
-```{r, echo=FALSE}
-count_df <- plotConsoleLog(console_log, sizing="figure")
-
-df<-count_df[,c("task", "pass", "fail")]
-
-write.csv(df,"pipeline_statistics.csv") 
-```
-
-`r figures("steps")`
-
-```{r, echo=FALSE}
-kable(count_df[c("step", "task", "total", "pass", "fail")],
-      col.names=c("Step", "Task", "Input", "Passed", "Failed"),
-      digits=3)
-```
-
-`r tables("count")`
-
-
-EOF
-	
-open OUT, ">pipeline_statistic_!{name}.rmd";
-print OUT $script;
-close OUT;
-
-'''
-}
-
-
-process make_report_pipeline_render_rmarkdown {
-
-publishDir params.outdir, mode: 'copy', saveAs: {filename -> if (filename =~ /.*.html$/) "report_pipeline/$filename"}
-input:
- file rmk from g55_2_rMarkdown0_g55_1
-
-output:
- file "*.html"  into g55_1_outputFileHTML00
- file "*csv" optional true  into g55_1_csvFile11
 
 """
 
