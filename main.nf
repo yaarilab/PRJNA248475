@@ -10,18 +10,57 @@ if (params.reads){
 Channel
 	.fromFilePairs( params.reads , size: params.mate == "single" ? 1 : params.mate == "pair" ? 2 : params.mate == "triple" ? 3 : params.mate == "quadruple" ? 4 : -1 )
 	.ifEmpty { error "Cannot find any reads matching: ${params.reads}" }
-	.set{g_2_reads_g0_0}
+	.set{g_2_reads_g_72}
  } else {  
-	g_2_reads_g0_0 = Channel.empty()
+	g_2_reads_g_72 = Channel.empty()
  }
 
-Channel.value(params.mate).into{g_3_mate_g11_9;g_3_mate_g16_9;g_3_mate_g0_7;g_3_mate_g0_5;g_3_mate_g0_0;g_3_mate_g54_14;g_3_mate_g54_12;g_3_mate_g54_10;g_3_mate_g26_20;g_3_mate_g28_15;g_3_mate_g21_15;g_3_mate_g22_16;g_3_mate_g53_9;g_3_mate_g53_12;g_3_mate_g53_11;g_3_mate_g18_15;g_3_mate_g18_19;g_3_mate_g18_12}
+Channel.value(params.mate).into{g_3_mate_g_72;g_3_mate_g11_9;g_3_mate_g16_9;g_3_mate_g0_7;g_3_mate_g0_5;g_3_mate_g0_0;g_3_mate_g54_14;g_3_mate_g54_12;g_3_mate_g54_10;g_3_mate_g26_20;g_3_mate_g28_15;g_3_mate_g21_15;g_3_mate_g22_16;g_3_mate_g53_9;g_3_mate_g53_12;g_3_mate_g53_11;g_3_mate_g18_15;g_3_mate_g18_19;g_3_mate_g18_12}
+
+
+process unizp {
+
+input:
+ set val(name),file(reads) from g_2_reads_g_72
+ val mate from g_3_mate_g_72
+
+output:
+ set val(name),file("*.fastq")  into g_72_reads0_g0_0
+
+script:
+
+readArray = reads.toString().split(' ')	
+R1 = readArray[0]
+R2 = readArray[1]
+
+"""
+case "$R1" in
+*.gz | *.tgz ) 
+        gunzip -c $R1 > R1.fastq
+        ;;
+*)
+        cp $R1 ./R1.fastq
+        echo "$R1 not gzipped"
+        ;;
+esac
+
+case "$R2" in
+*.gz | *.tgz ) 
+        gunzip -c $R2 > R2.fastq
+        ;;
+*)
+        cp $R2 ./R2.fastq
+        echo "$R2 not gzipped"
+        ;;
+esac
+"""
+}
 
 
 process Filter_Sequence_Quality_filter_seq_quality {
 
 input:
- set val(name),file(reads) from g_2_reads_g0_0
+ set val(name),file(reads) from g_72_reads0_g0_0
  val mate from g_3_mate_g0_0
 
 output:
